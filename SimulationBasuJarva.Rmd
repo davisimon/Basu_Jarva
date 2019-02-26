@@ -29,6 +29,9 @@ require(kableExtra)
 ```
 
 # Replication of Jarva and Lof (2018)
+https://poseidon01.ssrn.com/delivery.php?ID=907117081025014127096021000069120072026032046009065078108123108067127117070086005025032052096126039015001118027016091005097113042057064008052096081087014119000073003058041083071080070065031072091091120003079099028028081004100119064126022064090085074&EXT=pdf
+
+# Identifying accounting conservatismin the presence of skewness
 
 The authors simulate a set of income and retuns from companies, in order to show that when returns are right skewed, the assimetric timeliness coefficient ofthe Basu (1997) model will capture conservatism even when it is not explicitly modeled.
 
