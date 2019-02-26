@@ -1,0 +1,189 @@
+---
+title: "Basu_Jarva"
+author: "Davi Simon"
+date: "2/26/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require("MASS")
+#install.packages("tidyverse")
+#install.packages("fMultivar")
+#install.packages("sn")
+#install.packages("EMMIXskew")
+#install.packages("moments")
+#install.packages("LambertW")
+#install.packages("stargazer")
+require("tidyverse")
+require(magrittr)
+require(fMultivar)
+require(sn)
+require(EMMIXskew)
+require(moments)
+require(LambertW)
+require(stargazer)
+require(kableExtra)
+```
+
+# Replication of Jarva and Lof (2018)
+
+The authors simulate a set of income and retuns from companies, in order to show that when returns are right skewed, the assimetric timeliness coefficient ofthe Basu (1997) model will capture conservatism even when it is not explicitly modeled.
+
+
+## Simulating Variables
+
+We start by definid the parameter of the simulation
+Mean
+```{r remedy01}
+muR <- 0
+muI <- 0
+```
+
+variance
+```{r remedy02}
+sigmaR <- 1
+sigmaI <- 1
+```
+
+Correlations
+```{r remedy03}
+X1 <- 0.6
+```
+
+Number of reps
+```{r remedy04}
+n = 10000
+```
+
+# Simulation of variables
+```{r remedy05}
+set.seed(1)
+dat <- mvrnorm(n, mu = c(muR, muI),
+               Sigma = matrix(c(sigmaR, X1,    
+                                X1    , sigmaI),
+                              ncol = 2, byrow = TRUE),
+               empirical = TRUE)
+```
+
+I used empirical = TRUE to specify empirical not population parameters for μ
+and Σ. This results in the covariance matrix of dat having exactly the values we specified.
+  
+Checking the generated data, we have:
+```{r remedy06}  
+cov(dat)
+```
+
+```{r remedy07}
+colMeans(dat)
+```
+
+Running a first model on the generated data, we have the following results:
+
+```{r remedy08}
+dat <- as.data.frame(dat)
+colnames(dat) = c("Returns", "Income")
+dat %<>% mutate(D = ifelse(Returns < 0, 1, 0 )) 
+model <- lm(Income ~ Returns + D + Returns * D, data=dat)
+summary(model)
+```
+
+
+## Transformation 1 Skewed Returns
+
+Based on the description provided by the authors in footnote 9, we obtained the place of cdf of each variable, based on the cdf of the standard normal distribution throzgh object S_R, and then based on the skewed standard normal cdf, generated returns the position of the quantiles from the previous step.
+
+```{r remedy09}
+#from standard normal
+S_R <- pnorm(dat$Returns,0,1)  
+#now on the skewed normal distribution 
+Skewed_Returns <- qsn(S_R, xi=0, omega=1, alpha=10, tau=0)  
+```
+
+
+Creating a new data frame to store generated variables, we plot the comparable Returns and Skewed returns
+```{r remedy10}
+mod_dat <- as.data.frame(cbind(dat$Income,dat$Returns,Skewed_Returns))
+colnames(mod_dat) <- c("Income","Returns","Skewed_Returns")
+ggplot(mod_dat) + geom_density(aes(x=Returns)) + geom_density(aes(x=Skewed_Returns), color="red")
+```
+
+Following, we model the variable D, which is set to 0 when returns are positive, and 1 when returns are negative, following Basu (1997).
+
+```{r remedy11}
+mod_dat %<>% mutate(D = ifelse(Returns < 0, 1, 0 )) 
+mod_dat %<>% mutate(D_Skewed = ifelse(Skewed_Returns < 0, 1, 0 )) 
+
+```
+
+## Transformation 2 Skewed Income
+
+Next, we estimate skewed Income and plot it against te original income
+```{r remedy12}
+S_I <- pnorm(dat$Income,0,1)  
+Skewed_Income <- qsn(S_I, xi=0, omega=1, alpha=-10, tau=0)  
+mod_dat <- cbind(mod_dat,Skewed_Income)
+ggplot(mod_dat) + geom_density(aes(x=Income)) + geom_density(aes(x=Skewed_Income), color="red")
+```
+
+
+## Models
+
+At last, we estimate the models:
+
+
+```{r remedy13}
+model <- lm(Income ~ Returns + D + Returns * D, data=mod_dat)
+model_skewed_R <- lm(Income ~ Skewed_Returns + D_Skewed + Skewed_Returns * D_Skewed, data=mod_dat)
+model_skewed_I <- lm(Skewed_Income ~ Returns + D + Returns * D, data=mod_dat)
+model_skewed_I_R <- lm(Skewed_Income ~ Skewed_Returns + D_Skewed + Skewed_Returns * D_Skewed, data=mod_dat)
+```
+
+Summary of results
+```{r, results='asis'}
+stargazer(model,model_skewed_R,model_skewed_I,model_skewed_I_R, type="html",
+          dep.var.labels=c("Income"))
+```
+
+Correlation Structure of the original and modified variables
+```{r, results='asis'}
+stargazer(cor(mod_dat),type="html")
+```
+
+# are these results sensible to the level of alpha?
+
+```{r remedy15}
+data_frame_sims <- data.frame()
+sequence <- seq(from = 0, to = 10, by = 0.5)
+for (i in seq_along(sequence))
+{
+  S_R <- pnorm(dat$Returns,0,1)  
+  Skewed_Returns <- qsn(S_R, xi=0, omega=1, alpha=sequence[i], tau=0)  
+  # dataframe of Data
+  mod_dat <- as.data.frame(cbind(dat$Income,dat$Returns,Skewed_Returns))
+  colnames(mod_dat) <- c("Income","Returns","Skewed_Returns")
+  mod_dat %<>% mutate(D_Skewed = ifelse(Skewed_Returns < 0, 1, 0 )) 
+  model_skewed_R_i <- lm(Income ~ Skewed_Returns + D_Skewed + Skewed_Returns * D_Skewed, data=mod_dat)
+  data_frame_sims[i,1] <- sequence[i]
+  data_frame_sims[i,2] <- coefficients(summary(model_skewed_R_i))[4,1] 
+  data_frame_sims[i,3] <- coefficients(summary(model_skewed_R_i))[4,4]
+  }
+colnames(data_frame_sims) <- c("Alpha","Coefficient D x Skewed_Returns","p-value")
+```
+
+Examining the results:
+
+```{r remedy16}
+kable(data_frame_sims) %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+
+Following, Jarva and Lof simulate Ball, Kothari and Nikolaev (2013), with added skewness.
+
+...
+
+
